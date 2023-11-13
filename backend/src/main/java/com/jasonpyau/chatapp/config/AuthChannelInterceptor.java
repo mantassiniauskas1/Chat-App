@@ -22,31 +22,62 @@ import com.jasonpyau.chatapp.service.RateLimitService.Token;
 public class AuthChannelInterceptor implements ChannelInterceptor {
 
     @Autowired
-    private UserService userService;
+    public UserService userService;
 
     @Autowired
-    private GroupChatService groupChatService;
-    
+    public GroupChatService groupChatService;
+
+    public AuthChannelInterceptor(UserService userService, GroupChatService groupChatService) {
+
+    }
+
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+
+        // Check if accessor is null
+        if (accessor == null) {
+            // Handle the case where accessor is null (log an error, return null, etc.)
+            return null;
+        }
+
         StompCommand cmd = accessor.getCommand();
+
         if (cmd == StompCommand.SUBSCRIBE) {
             Long id = null;
-            String desination = accessor.getDestination();
-            if (desination.startsWith("/topic/groupchat/")) {
-                id = Long.valueOf(desination.split("/")[3]);
+            String destination = accessor.getDestination();
+
+            // Check if destination is null
+            if (destination == null) {
+                // Handle the case where destination is null (log an error, return null, etc.)
+                return null;
             }
+
+            if (destination.startsWith("/topic/groupchat/")) {
+                id = parseGroupId(destination);
+            }
+
             if (id != null) {
                 User user = userService.getUserFromWebSocket(accessor.getUser());
                 Optional<GroupChat> optional = groupChatService.findById(id);
+
                 if (optional.isEmpty() || !optional.get().getUsers().contains(user)) {
                     return null;
                 }
+
                 RateLimitService.RateLimiter.rateLimit(user, Token.BIG_TOKEN);
             }
-
         }
+
         return message;
+    }
+
+    private Long parseGroupId(String destination) {
+        try {
+            return Long.valueOf(destination.split("/")[3]);
+        } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+            // Handle the case where parsing fails (log an error, return null, etc.)
+            return null;
+        }
     }
 }
